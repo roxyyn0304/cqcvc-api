@@ -824,8 +824,9 @@ GET /admin/pkgl/xskb/sdpkkbList?xnxq={学期}&xhid={xhid}&xqdm={xqdm}&zdzc=&zxzc
 
 注意：
 
-- 同一课程名在不同星期**各自一行、周次可以不同**；与网格连接时用（`xingqi`、`djc` ≤ 目标节、剥壳后 `kcmc` 相等）匹配，取起始节最接近的行。
-- `kcmc`、`croommc` 必须先剥 HTML 标签再比较/展示。
+- **数据形态事实**：同一课程名在不同星期**各自一行、周次可以不同**；**同一星期、同一 `djc` 也可能有多行**（`croommc` 教室、`zcstr` 周次不同——真实样本：周四第1-2节高等数学 = 文华楼125 第15-18周 + 文华楼521 第4-5周）。
+- `kcmc`、`croommc` 字段值为 HTML 锚点（含 `<a>` 标签）。
+- 网格与周次源的连接、去重、合并等属使用方的数据处理逻辑，不在本文档范围。
 - 同页相关接口：备注 `POST /admin/pkgl/xskb/getbzxx`（参数 `xnxq`、`xhid`）、打印 `reportforxskb`；周次筛选与周次合并算法都在该页 JS 中。
 
 ## 18. 开学日期与当前周推算
