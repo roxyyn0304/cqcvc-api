@@ -3,6 +3,7 @@
 > 学校：重庆城市职业学院 `jw.cqcvc.edu.cn`  
 > 系统：超星综合教学管理系统 v3  
 > 逆向时间：2026-09-20  
+> 实测修订：2026-09-23（真实账号验证：新增 §17 课表周次真源、§18 开学日期推算；纠正 getXqList/学期参数/WAF 三处结论）  
 > 说明：本文档基于逆向分析整理，仅供学习与开发参考。请遵守学校规定与相关法律法规，切勿滥用。
 
 ---
@@ -50,7 +51,9 @@
 - [14. WAF 与安全校验](#14-waf-与安全校验)
 - [15. 注意事项](#15-注意事项)
 - [16. 待进一步确认](#16-待进一步确认)
-- [17. 免责声明](#17-免责声明)
+- [17. 学生课表真数据源 sdpkkbList（周次）](#17-学生课表真数据源-sdpkkblist周次)
+- [18. 开学日期与当前周推算](#18-开学日期与当前周推算)
+- [19. 免责声明](#19-免责声明)
 
 ---
 
@@ -103,6 +106,8 @@ username={学号明文}&password={RSA加密密码}&jcaptchaCode=&rememberMe=1
 **成功响应**：302 重定向到 `/admin`，`Set-Cookie` 包含 `JSESSIONID`。
 
 **失败响应**：302 重定向回登录页，可能带 `?jcaptchaError=1`，或提示用户名密码错误。
+
+**实测补充（2026-09-23）**：推荐先 `GET /admin/login`（获取 `uid`/`route` Cookie 与隐藏域 `jcaptchaCode`/`rememberMe`）再 POST；密码错误时也可能**200 重新渲染登录页**（响应体内含“密码错误”标记），并非一律 302；未登录访问业务接口返回 **303** 跳转登录页；成功判定建议用“最终 URL 不以 `login` 结尾”。
 
 ### 3.2 重要 Cookie
 
@@ -166,7 +171,9 @@ Accept-Language: zh-CN,zh;q=0.9
 | 课表 | POST | `/admin/getXsdSykb` | 获取学生课表，无参数 |
 | 课表 | GET | `/admin/getCurrentPkZc` | 当前排课周次列表 |
 | 课表 | GET | `/admin/api/getZclistByXnxq` | 当前第几周 |
-| 课表 | GET | `/admin/api/jcsj/xqsj/getXqList` | 学期列表 |
+| 课表 | GET | `/admin/api/jcsj/xqsj/getXqList` | 校区列表（原“学期列表”有误，2026-09-23 纠正） |
+| 课表 | GET | `/admin/pkgl/xskb/queryKbForXsd?xnxq=...` | 课表页面，隐藏域含 `xhid`/`xqdm` |
+| 课表 | GET | `/admin/pkgl/xskb/sdpkkbList?...` | **学生课表真数据源（含周次），见 §17** |
 | 课表 | GET | `/admin/api/getXlzc` | 学历层次 |
 | 成绩 | POST | `/admin/xsd/xsdcjcx/xsdQueryXscjList?fxbz=0&gridtype=jqgrid` | 成绩查询 jqGrid |
 | 成绩 | GET | `/admin/xsd/xsdzgcjcx/getXspjxfjd` | 平均学分绩点 |
@@ -258,6 +265,8 @@ X-Requested-With: XMLHttpRequest
 - `kcxx`：该时段该天的课程，可能 1 门或多门。
 - 空课时课程名、教师、教室均为 `"-"`。
 
+> **实测（2026-09-23）**：`kcxx` 课程对象仅含 `kcmc / teacher / classroom`，**不含周次字段**；`sjk` 为孤儿行（其 `zcstr` 恒为 `-`，与网格课程无法关联）。课表真实周次来自另一接口，见 [§17 学生课表真数据源 sdpkkbList](#17-学生课表真数据源-sdpkkblist周次)。
+
 ### 6.2 节次时间表
 
 | 节次 | 开始 | 结束 |
@@ -308,34 +317,28 @@ GET /admin/api/getZclistByXnxq
 }
 ```
 
-### 6.5 学期列表
+### 6.5 校区列表（原“学期列表”有误，2026-09-23 实测纠正）
 
 ```http
 GET /admin/api/jcsj/xqsj/getXqList
 ```
 
-响应：
+**实测返回的是校区列表**（`xq` = 校区而非学期；`xqdz` 是**学校地址**、不是日期范围）：
 
 ```json
 {
   "ret": 0,
   "data": [
     {
-      "id": "...",
-      "xqh": "1",
-      "xqmc": "2026-2027-1",
-      "dataXnxq": "...",
-      "currentRoleId": "...",
-      "currentJsId": "...",
-      "userRoleId": "...",
-      "dataAuth": "...",
-      "xqdz": "...",
-      "xqym": "...",
-      "xqdwfzrjgh": "..."
+      "id": "00001",
+      "xqmc": "永川",
+      "xqdz": "重庆市永川区兴龙大道1999号"
     }
   ]
 }
 ```
+
+> `id`（如 `00001`）可直接用作 `sdpkkbList` 的 `xqdm` 参数。**权威学期列表**见成绩页 `qbcjcx` 的 `select#startXnxq` 下拉选项（值形如 `2026-2027-1`，同时就是 §7.1 的 `startXnxq/endXnxq` 参数格式）。
 
 ### 6.6 学历层次
 
@@ -374,8 +377,8 @@ page.pn={页码}&page.size={每页条数}&startXnxq={起始学期}&endXnxq={结�
 | gridtype | String | 是 | 固定 `jqgrid` |
 | page.pn | Int | 是 | 页码，从 1 开始 |
 | page.size | Int | 否 | 每页条数，默认 20 |
-| startXnxq | String | 是 | 起始学年学期，如 `001` |
-| endXnxq | String | 是 | 结束学年学期，如 `001` |
+| startXnxq | String | 是 | 起始学年学期，**本校实测为完整串 `2026-2027-1`**（取自成绩页 `select#startXnxq` 选项） |
+| endXnxq | String | 是 | 结束学年学期，**本校实测为完整串 `2026-2027-1`** |
 | sort | String | 否 | 排序字段，默认 `xnxq` |
 | order | String | 否 | `desc` 或 `asc` |
 
@@ -753,9 +756,9 @@ queryFields=id,kspcmc,xh,xm,kcmc,kssj,jsmc,ksfs,ksxs,zwh,bkcs,bz,rwbz,&_search=f
 ## 14. WAF 与安全校验
 
 - 域名 `jw.cqcvc.edu.cn` 启用了 **Web 应用防火墙**，基于 IP 特征 + UA 特征。
-- `/admin/xsd/xk` 等前端 SPA 页面直接 curl 访问可能返回 502，被 WAF 拦截。
-- JSON API 接口，如 `/admin/xsd/xk/listV2`，通常不受影响。
-- 建议使用完整浏览器 UA 和合理的请求间隔。
+- **实测（2026-09-23，同会话同端点仅换 UA）**：浏览器 UA（Edge/Windows）访问 `getCurrentXnxq` → **200**；无 UA → **403**；`ZhengfangAcademicPlugin/1` → **403**。
+- **结论修正**：JSON API **同样按 UA 拦截**——原文“JSON API 通常不受影响”仅在携带浏览器 UA 时成立；登录 POST 携带浏览器 UA 实测 `302 → /admin` 成功。
+- SPA 页面 curl 直访仍可能502；建议始终携带完整浏览器 UA 并保持合理请求间隔。
 
 ---
 
@@ -763,7 +766,7 @@ queryFields=id,kspcmc,xh,xm,kcmc,kssj,jsmc,ksfs,ksxs,zwh,bkcs,bz,rwbz,&_search=f
 
 1. **Session 过期**：`JSESSIONID` 有效期不确定，长时间无操作后需重新登录。
 2. **Cookie 绑定**：Session 绑定 IP + UID，换 IP 后 Session 可能失效。
-3. **学年学期参数**：`startXnxq` / `endXnxq` 格式为 `001`（第一学期）、`002`（第二学期），而非完整年份。
+3. **学年学期参数（2026-09-23 实测纠正）**：`startXnxq` / `endXnxq` 为**完整串**（如 `2026-2027-1`，与成绩页 `select#startXnxq` 选项一致），原文档 `001` 形态不适用本校。
 4. **课程列表为空**：非选课时间段，`listV2` 返回“没有可选的教学班”，属正常现象。
 5. **成绩为空**：新生第一学期可能暂无成绩数据。
 6. **Content-Type 区分**：
@@ -783,7 +786,59 @@ queryFields=id,kspcmc,xh,xm,kcmc,kssj,jsmc,ksfs,ksxs,zwh,bkcs,bz,rwbz,&_search=f
 
 ---
 
-## 17. 免责声明
+## 17. 学生课表真数据源 sdpkkbList（周次）
+
+课表网格接口（§6.1）**不含周次**；网页课表上每门课显示的周次来自本节接口（2026-09-23 实测）。
+
+### 17.1 打开课表页获取隐藏域
+
+```http
+GET /admin/pkgl/xskb/queryKbForXsd?xnxq={学期}&zxzc=&zdzc=&xskbxslx=0
+```
+
+- `zxzc` / `zdzc`：起始/终止周次筛选，留空 = 全部；`xskbxslx`：显示类型页签（默认 `0`）。
+- 响应 HTML 内含隐藏域：`xhid`（学生哈希，长度 86）、`xqdm`（校区代码，如 `00001`，与 §6.5 的 `id` 一致）。
+
+### 17.2 查询课表数据（含周次）
+
+```http
+GET /admin/pkgl/xskb/sdpkkbList?xnxq={学期}&xhid={xhid}&xqdm={xqdm}&zdzc=&zxzc=&xskbxslx=0
+```
+
+页面 JS 为 `$.ajax` 默认 **GET**；每行 = 一个课程时段（与网格课程一一对应，实测 38 行对应 38 门）。
+
+响应 `{ret:0, msg:"操作成功", data:[...]}`，关键字段：
+
+| 字段 | 含义 | 实测样例（脱敏） |
+|---|---|---|
+| `xingqi` | 星期 1-7 | `1` |
+| `djc` | 起始节次 | `1` |
+| `kcmc` | 课程名，**HTML 锚点，需剥标签** | `<a ...>大学英语Ⅰ</a>` |
+| `zc` | 周次区间式 | `4-5,9-18` |
+| `zcstr` | 周次展开式（逗号分隔，优先使用） | `4,5,9,10,...,18` |
+| `croommc` | 教室，**HTML 锚点，需剥标签** | 文华楼119 |
+| `jxlmc` | 楼栋 | 文华楼 |
+| `jxbmc` | 教学班名称 | 大学英语Ⅰ(公共课)-理论114 |
+| `xq` / `xqmc` | 校区 | `00001` / 永川 |
+| `xf` `zongxs` `xkrs` | 学分 / 总学时 / 选课人数 | `2` / `32` / `44` |
+
+注意：
+
+- 同一课程名在不同星期**各自一行、周次可以不同**；与网格连接时用（`xingqi`、`djc` ≤ 目标节、剥壳后 `kcmc` 相等）匹配，取起始节最接近的行。
+- `kcmc`、`croommc` 必须先剥 HTML 标签再比较/展示。
+- 同页相关接口：备注 `POST /admin/pkgl/xskb/getbzxx`（参数 `xnxq`、`xhid`）、打印 `reportforxskb`；周次筛选与周次合并算法都在该页 JS 中。
+
+## 18. 开学日期与当前周推算
+
+- §6.4 的 `getZclistByXnxq` 返回 `dqzc`（当前第几周），同时响应头带标准 **`Date`**（RFC1123，服务器为中国标准时间 +8）。
+- **第一周周一（开学日）= 服务器本周一 − (dqzc − 1) × 7 天**。
+  实测：2026-09-23（周三，`dqzc=4`）→ 开学日 **2026-08-31**，与独立推算脚本互验一致。
+- 用途：客户端课表的 `startDate`、当前周高亮；**仅对当前学期有效**。
+- 实现提示：QuickJS 的 `Date.parse` 不识别 RFC1123，需按 `Wed, 23 Sep 202606:00:00 GMT` 手写解析；Android 宿主会把 `Date` 响应头透出给插件。
+
+---
+
+## 19. 免责声明
 
 本文档仅用于技术学习、接口整理与开发参考。  
 请勿将相关接口用于未经授权的访问、批量爬取、账号盗用或其他违反学校规定与法律法规的行为。  
